@@ -1,6 +1,7 @@
 from decimal import Decimal
+from fastapi import Form
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
-from typing import Optional
+from typing import Annotated, Optional
 from datetime import datetime
 
 
@@ -49,13 +50,23 @@ class ProductCreate(BaseModel):
         description="Описание товара (до 500 символов)"
     )
     price: Decimal = Field(gt=0, description="Цена товара (больше 0)", decimal_places=2)
-    image_url: str | None = Field(
-        None,
-        max_length=200,
-        description="URL изображения товара"
-    )
     stock: int = Field(ge=0, description="Количество товара на складе (0 или больше)")
     category_id: int = Field(description="ID категории, к которой относится товар")
+
+    @classmethod
+    def as_form(cls,
+                name: Annotated[str, Form(...)],
+                price: Annotated[Decimal, Form(...)],
+                stock: Annotated[int, Form(...)],
+                category_id: Annotated[int, Form(...)],
+                description: Annotated[Optional[str], Form()] = None,
+                ) -> "ProductCreate":
+        return cls(name=name,
+                   description=description,
+                   price=price,
+                   stock=stock,
+                   category_id=category_id)
+
 
 
 class Product(BaseModel):
@@ -71,6 +82,18 @@ class Product(BaseModel):
     stock: int = Field(description="Количество товара на складе")
     category_id: int = Field(description="ID категории")
     is_active: bool = Field(description="Активность товара")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProductList(BaseModel):
+    """
+    Список пагинации для товаров.
+    """
+    items: list[Product] = Field(description="Товары для текущей страницы")
+    total: int = Field(ge=0, description="Общее количество товаров")
+    page: int = Field(ge=1, description="Номер текущей страницы")
+    page_size: int = Field(ge=1, description="Количество элементов на странице")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -109,3 +132,68 @@ class ReviewCreate(BaseModel):
     product_id: int = Field(gt=0, description="ID товара")
     comment: Optional[str] = Field(None, max_length=500, description="Текст отзыва (необязательно)")
     grade: int = Field(..., ge=1, le=5, description="Оценка от 1 до 5")
+
+
+class CartItemBase(BaseModel):
+    product_id: int = Field(description="ID товара")
+    quantity: int = Field(ge=1, description="Количетсво товара")
+
+
+class CartItemCreate(CartItemBase):
+    """Модель для добавления нового товара в корзину."""
+    pass
+
+
+class CartItemUpdate(BaseModel):
+    """Модель для обновления количества товара в корзине."""
+    quantity: int = Field(..., ge=1, description="Новое количество товара")
+
+
+class CartItem(BaseModel):
+    """Товар в корзине с данными продукта."""
+    id: int = Field(..., description="ID позиции корзины")
+    quantity: int = Field(..., ge=1, description="Количество товара")
+    product: Product = Field(..., description="Информация о товаре")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class Cart(BaseModel):
+    user_id: int = Field(..., description="ID пользователя")
+    items: list[CartItem] = Field(default_factory=list, description="Содержимое корзины")
+    total_quantity: int = Field(..., ge=0, description="Общее количество товаров")
+    total_price: int = Field(..., ge=0, description="Общая стоимость товаров")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class OrderItem(BaseModel):
+    id: int = Field(..., description="ID позиции заказа")
+    product_id: int = Field(..., description="ID товара")
+    quantity: int = Field(..., ge=1, description="Количество")
+    unit_price: Decimal = Field(..., ge=0, description="Цена за единицу на момент покупки")
+    total_price: Decimal = Field(..., ge=0, description="Сумма по позиции")
+    product: Product | None = Field(None, description="Полная информация о товаре")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class Order(BaseModel): 
+    id: int = Field(..., description="ID заказа")
+    user_id: int = Field(..., description="ID пользователя")
+    status: str = Field(..., description="Текущий статус заказа")
+    total_amount: Decimal = Field(..., ge=0, description="Общая стоимость")
+    created_at: datetime = Field(..., description="Когда заказ был создан")
+    updated_at: datetime = Field(..., description="Когда заказ последний раз обновлялся")
+    items: list[OrderItem] = Field(default_factory=list, description="Список позиций")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class OrderList(BaseModel):
+    items: list[Order] = Field(..., description="Заказы на текущей странице")
+    total: int = Field(ge=0, description="Общее количество заказов")
+    page: int = Field(ge=1, description="Текущая страница")
+    page_size: int = Field(ge=1, description="Размер страницы")
+
+    model_config = ConfigDict(from_attributes=True)
